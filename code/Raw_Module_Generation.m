@@ -1,48 +1,60 @@
-function Raw_Module_Generation(Cancer_Type,alpha);
+%Raw_Module_Generation generates the raw cancer module.
+%
+%   Raw_Module_Generation(Cancer_Type) calculates and generates the raw
+%   cancer module for a cancer type given by the string Cancer_Type.
+%   Cancer_Type can be of the form 'name' or 'name.mat'. Alpha value used
+%   is 0.5.
+%
+%   Raw_Module_Generation(Cancer_Type, alpha) The alpha parameter is used
+%   to determine the probability of the random walker moving to a random
+%   neighbour during the Random Walk with Restart process (RWR).
+function Raw_Module_Generation(Cancer_Type,alpha)
 
-%%%% Raw_Module_Generation('LUAD',0.5);
-
-if nargin < 2
-    alpha=0.5;
-end
-
-load(['Data_mat/Cancer_Specific_PPI/',Cancer_Type]);   %%%%% network
-load(['Data_mat/Mutation/',Cancer_Type]);  %%%%% mutation
-load Data_mat/Gene_Length %%%%% gene length
-
-%%%%%%% eliminate the infulence of the high connected gene
-a=ismember(Net,[7316,7273]);
-Net(a(:,1)+a(:,2)~=0,:)=[];
-[LG,L]=largest_component(Net);
-Net=LG{find(L==max(L))};
-
-%%% mutation varify (mutation/gene length)
-Mutation=sortrows(Mutation,1);
-[a,b]=ismember(Mutation(:,1),Gene_Length(:,1));
-Gene_Length(b(a),3)=Mutation(a,2);
-Mutation=Gene_Length;
-MG=unique(Net(:));
-[a,b]=ismember(Mutation(:,1),MG);
-MG(b(a),2:3)=Mutation(a,2:3);
-PM=MG(:,1);
-for i=1:length(MG)
-    if MG(i,2)==0
-        PM(i,2)=0;
-    else
-        PM(i,2)=MG(i,3)/MG(i,2);
+    if nargin < 2
+        alpha=0.5;
     end
+
+    % Adjust the filename
+    Cancer_Type = format_cancer_type(Cancer_Type);
+
+    load(['Data_mat/Cancer_Specific_PPI/',Cancer_Type]);   %%%%% network
+    load(['Data_mat/Mutation/',Cancer_Type]);  %%%%% mutation
+    load Data_mat/Gene_Length %%%%% gene length
+
+    %%%%%%% eliminate the infulence of the high connected gene
+    a=ismember(Net,[7316,7273]);
+    Net(a(:,1)+a(:,2)~=0,:)=[];
+    [LG,L]=largest_component(Net);
+    Net=LG{L==max(L)};
+
+    %%% mutation varify (mutation/gene length)
+    Mutation=sortrows(Mutation,1);
+    [a,b]=ismember(Mutation(:,1),Gene_Length(:,1));
+    Gene_Length(b(a),3)=Mutation(a,2);
+    Mutation=Gene_Length;
+    MG=unique(Net(:));
+    [a,b]=ismember(Mutation(:,1),MG);
+    MG(b(a),2:3)=Mutation(a,2:3);
+    PM=MG(:,1);
+    for i=1:length(MG)
+        if MG(i,2)==0
+            PM(i,2)=0;
+        else
+            PM(i,2)=MG(i,3)/MG(i,2);
+        end
+    end
+
+    %PM(:,1)=MG(randperm(length(MG)));
+    [a,G]=ismember(Net,MG(:,1)); %%%%% mutation smoothing
+    G=sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)],1);
+    F=network_smoothing(PM(:,2),G,alpha,1);
+    PM(:,2)=F;
+
+    %%%% generate raw modules (the number of raw module is LL) 
+    LL=60000;
+    Module_Forming_Process(Net,PM,Cancer_Type,alpha,LL);
+
 end
-
-%PM(:,1)=MG(randperm(length(MG)));
-[a,G]=ismember(Net,MG(:,1)); %%%%% mutation smoothing
-G=sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)],1);
-F=network_smoothing(PM(:,2),G,alpha,1);
-PM(:,2)=F;
-
-%%%% generate raw modules (the number of raw module is LL) 
-LL=60000;
-Module_Forming_Process(Net,PM,Cancer_Type,alpha,LL);
-
 
 %%%%%%% calculate the largest component of the PPI network
 function [LG,L]=largest_component(G);
@@ -172,5 +184,13 @@ for i=1:LL
         toc;
         disp(i)
         save(['Data_mat/Raw_Module/Raw_Module_',Cancer_Type,'_',Str_alpha,'.mat'],'Module','Score')
+    end
+end
+
+function formatted = format_cancer_type(Cancer_Type)
+    [~, ~, ext] = fileparts(Cancer_Type);
+    formatted = Cancer_Type;
+    if isempty(ext)
+        formatted = strcat(Cancer_Type, ".mat");
     end
 end

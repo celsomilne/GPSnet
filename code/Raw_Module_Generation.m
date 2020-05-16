@@ -63,15 +63,18 @@ function Raw_Module_Generation(Cancer_Type,alpha)
     gene_ids = connected_genes(:, 1);
     
     % Calculate s(i) (see equation (1)) 
-    si = mutation_frequency ./ gene_lengths;
-    si(isnan(si)) = 0;
-    s = [gene_ids, si];
+    s0 = mutation_frequency ./ gene_lengths;
+    s0(isnan(s0)) = 0;
 
-    % Network smoothing
-    [~, G]=ismember(Net, gene_ids); %%%%% mutation smoothing
-    G=sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)], 1);
-    F=network_smoothing(s(:,2),G,alpha,1);
-    s(:,2)=F;
+    % Create an adjacency matrix of the undirected PPI network, `Net`,
+    % where genes that are connected in `Net` are given weights of 1 in
+    % both directions.
+    [~, G] = ismember(Net, gene_ids);
+    G = sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)], 1);
+    
+    % Run network smoothing (see supplementary note 3).
+    F = network_smoothing(s0, G, alpha);
+    s = [gene_ids, F];
 
     %%%% generate raw modules (the number of raw module is LL) 
     LL=60000;
@@ -158,19 +161,57 @@ function [modified, masked] = mask_and_delete(mat, mask)
     modified(mask, :) = [];
 end
 
+%network_smoothing run netwrok smoothing on the sparse PPI graph given by
+%an adjacency graph.
+%
+%   F = network_smoothing(s0, G, alpha) using the PPI graph given by the
+%   sparse adjacency graph, G, with an initial score estimate given by s0
+%   (which should be calculated as s0 = m(i) / l(i)), run diffusion network
+%   smoothing with a given alpha value.
+function F = network_smoothing(s0, G, alpha)
+
+    % Calculate the inverse of the degree of gene j, 1/k(j)
+    kj = sum(G, 2);
+    inv_kj = sparse(diag(1./kj));
+    W = G * inv_kj;
+    
+    % Convergence stopping criterion
+    tol = 1e-8;
+    
+    % Run diffusion network smoothing
+    % TODO : functions for conduction network smoothing and other case
+    F = diffusion_network_smoothing(s0, W, alpha, tol);
+end
+
+function stp1 = diffusion_network_smoothing(s0, W, alpha, tol)
+    
+    % Aribtrary initial value
+    delta = 1;
+    
+    % Start at s_{t+1} = s_0
+    stp1 = s0;
+    
+    % Run equation (4) until convergence
+    while delta > tol
+       st = stp1;
+       stp1 = (1 - alpha) * W * st + alpha * s0;
+       delta = sum((stp1 - st).^2);
+    end
+end
 
 %%%%%% network smoothing using the network spreading process
-function F=network_smoothing(Mutation,G,alpha,flag);
- 
-Mutation=Mutation/sum(Mutation)*length(Mutation);
-F=Mutation;
-Y=Mutation;
+function F=network_smoothing_deprecated(s, G, alpha, flag)
+
+% Calculate the initial score 
+s = s / mean(s);
+F = s;
+Y = s;
+
 sn=sum(G,2);
 D=sparse(diag(1./sn));
 W1=G*D;   %%%% md
+W2 = G ./ sum(G, 2);
 delta=100;
-k=0;
-x=F;
 switch flag
     case 1  %%%%% diffusion
         while delta>10^(-8)
@@ -199,7 +240,7 @@ switch flag
             delta=sum((F-F0).^2);
         end 
 end
-F=F*sum(Mutation)/length(Mutation);
+F = F * mean(s);
 end
 
 

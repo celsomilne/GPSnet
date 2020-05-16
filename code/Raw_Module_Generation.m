@@ -17,71 +17,145 @@ function Raw_Module_Generation(Cancer_Type,alpha)
     % Adjust the filename
     Cancer_Type = format_cancer_type(Cancer_Type);
 
-    load(['Data_mat/Cancer_Specific_PPI/',Cancer_Type]);   %%%%% network
-    load(['Data_mat/Mutation/',Cancer_Type]);  %%%%% mutation
-    load Data_mat/Gene_Length %%%%% gene length
+    % Load in the PPI network (n X 2 array of cancer type-specific
+    % protein-protein interactions based on tumour's RNA sequencing data)
+    Net = load(strcat('Data_mat/Cancer_Specific_PPI/', Cancer_Type));
+    
+    % Load in mutation information (m X 2 array. Column 1 contains the gene
+    % number, column 2 contains the mutation frequency.)
+    Mutation = load(strcat('Data_mat/Mutation/',Cancer_Type));
+    
+    % Load in the lengths of genes (o X 2 array of <description>)
+    Gene_Length = load('Data_mat/Gene_Length');
+    
+    % Extract from structs (due to how Matlab loads information)
+    Net = Net.Net;
+    Mutation = Mutation.Mutation;
+    Gene_Length = Gene_Length.Gene_Length;
 
-    %%%%%%% eliminate the infulence of the high connected gene
-    a=ismember(Net,[7316,7273]);
-    Net(a(:,1)+a(:,2)~=0,:)=[];
-    [LG,L]=largest_component(Net);
-    Net=LG{L==max(L)};
+    % Eliminate highly connected genes (7316 and 7273) by deleting any rows
+    % in which either of the two genes appears
+    mask = any(ismember(Net,[7316,7273]), 2);
+    Net(mask, :)=[];
+    clear mask;
+    
+    % Select the largest component (see largest_component function).
+    Net = largest_component(Net);
+    connected_genes = unique(Net);
 
-    %%% mutation varify (mutation/gene length)
+    % Match genes, their lengths and their mutation frequencies. Produce an
+    % m X 3 matrix, where column 1 is the gene number, column 2 is the gene
+    % length, and column 3 is gene mutation frequency.
     Mutation=sortrows(Mutation,1);
     [a,b]=ismember(Mutation(:,1),Gene_Length(:,1));
     Gene_Length(b(a),3)=Mutation(a,2);
     Mutation=Gene_Length;
-    MG=unique(Net(:));
-    [a,b]=ismember(Mutation(:,1),MG);
-    MG(b(a),2:3)=Mutation(a,2:3);
-    PM=MG(:,1);
-    for i=1:length(MG)
-        if MG(i,2)==0
-            PM(i,2)=0;
-        else
-            PM(i,2)=MG(i,3)/MG(i,2);
-        end
-    end
+    
+    % Now match gene length and mutation frequency to the genes that we
+    % observe in our largest connected component. We now have an n X 3
+    % matrix with columns: [gene number, gene length, gene mutation
+    % frequency].
+    [a,b]=ismember(Mutation(:,1),connected_genes);
+    connected_genes(b(a),2:3)=Mutation(a,2:3);
+    
+    mutation_frequency = connected_genes(:, 3);
+    gene_lengths = connected_genes(:, 2);
+    gene_ids = connected_genes(:, 1);
+    
+    % Calculate s(i) (see equation (1)) 
+    si = mutation_frequency ./ gene_lengths;
+    si(isnan(si)) = 0;
+    s = [gene_ids, si];
 
-    %PM(:,1)=MG(randperm(length(MG)));
-    [a,G]=ismember(Net,MG(:,1)); %%%%% mutation smoothing
-    G=sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)],1);
-    F=network_smoothing(PM(:,2),G,alpha,1);
-    PM(:,2)=F;
+    % Network smoothing
+    [~, G]=ismember(Net, gene_ids); %%%%% mutation smoothing
+    G=sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)], 1);
+    F=network_smoothing(s(:,2),G,alpha,1);
+    s(:,2)=F;
 
     %%%% generate raw modules (the number of raw module is LL) 
     LL=60000;
-    Module_Forming_Process(Net,PM,Cancer_Type,alpha,LL);
+    Module_Forming_Process(Net,s,Cancer_Type,alpha,LL);
 
 end
 
-%%%%%%% calculate the largest component of the PPI network
-function [LG,L]=largest_component(G);
-k=0;
-if isempty(G)
-    LG={[]};
-    L=0;
-end
-while ~isempty(G)
-    k=k+1;
-    nn=G(ceil(rand*size(G,1)),1);
-    m1=ismember(G(:,1),nn);
-    m2=ismember(G(:,2),nn);
-    g=G(m1|m2,:);
-    G(m1|m2,:)=[];
-    ng=unique(g(:));
-    while ~isempty(ng)
-        m1=ismember(G(:,1),ng);
-        m2=ismember(G(:,2),ng);
-        gg=G(m1|m2,:);
-        ng=unique(gg(:));
-        g=[g;gg];
-        G(m1|m2,:)=[];
+%largest_component calculates the largest component of the PPI network
+%according to [1] and supplementary note 2.
+%
+%   LG = largest_component(G) returns the largest connected component in G,
+%   the PPI network. In essence, the algorithm is a BFS of the network,
+%   each level selecting proteins further and further from the seed to
+%   create an image of the connected components in the PPI. The largest
+%   connected component is returned.
+%
+%   References 
+%   ---------- 
+%   [1] Menche, J., Sharma, A., Kitsak, M., Ghiassian, S.D., Vidal, M.,
+%   Loscalzo, J. and Barabási, A.L., 2015. Uncovering disease-disease
+%   relationships through the incomplete interactome. Science, 347(6224),
+%   p.1257601.
+function LG = largest_component(G)
+ 
+    % Return an empty array for an empty input PPI network. 
+    if isempty(G)
+        LG=[];
+        return
     end
-    LG{k,1}=g;
-    L(k,1)=length(unique(g(:)));
-    clear g
+
+    max_component_size = -1;
+    while ~isempty(G)
+        
+        % Randomly select a protein, and find any proteins that interact
+        % with it (i.e. select any nodes in which the seed protein
+        % appears).
+        rand_idx = ceil(rand * size(G, 1));
+        seed = G(rand_idx, 1);
+        mask = any(ismember(G, seed), 2);
+        
+        % Select all rows (nodes) in the network in which the seed protein
+        % appears. Delete them from G and save them to a new variable,
+        % representing the current level of the BFS.
+        [G, component] = mask_and_delete(G, mask);
+        
+        % Create a single list of the unique proteins found in the
+        % current level
+        unique_proteins = unique(component);
+        
+        while ~isempty(unique_proteins)
+            
+            % Mask of any rows which contain any of the unique proteins in
+            % the current component. Fetch those rows from G, which is the
+            % next level of the BFS and delete them from G.
+            mask = any(ismember(G, unique_proteins), 2);
+            [G, level] = mask_and_delete(G, mask);
+            
+            % Update the connected component to include the new level of
+            % proteins and get the unique proteins in the next level of
+            % BFS.
+            component = [component; level];
+            unique_proteins=unique(level);
+        end
+        
+        % If this component is larger than the previous largest component,
+        % then set the largest component and the maximum component size
+        component_size = length(unique(component));
+        if component_size > max_component_size
+            max_component_size = component_size;
+            LG = component;
+        end  
+    end
+end
+
+%mask_and_delete fetches the rows defined by a boolean mask and removes
+%them from the original matrix.
+%
+%   [modified, masked] = mask_and_delete(mat, mask) selects the rows of mat
+%   defined in the mask, copies them to `masked` and returns a copy of
+%   `mat` with those rows removed.
+function [modified, masked] = mask_and_delete(mat, mask)
+    masked = mat(mask, :);
+    modified = mat;
+    modified(mask, :) = [];
 end
 
 
@@ -126,6 +200,7 @@ switch flag
         end 
 end
 F=F*sum(Mutation)/length(Mutation);
+end
 
 
 %%%%%%%% generate the raw module
@@ -186,7 +261,9 @@ for i=1:LL
         save(['Data_mat/Raw_Module/Raw_Module_',Cancer_Type,'_',Str_alpha,'.mat'],'Module','Score')
     end
 end
+end
 
+%format_cancer_type formats the Cancer_Type string into a valid filename.
 function formatted = format_cancer_type(Cancer_Type)
     [~, ~, ext] = fileparts(Cancer_Type);
     formatted = Cancer_Type;

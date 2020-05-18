@@ -80,7 +80,7 @@ function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
     F = network_smoothing(s0, G, alpha);
 
     % Generate the raw modules
-    LL=60000;
+    LL=100;
     [modules, ~] = module_forming(G, F, LL);
     
     % Run for old behaviour
@@ -108,7 +108,7 @@ function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
     gene_idxs = gene_idxs(idxs);
     L = 300;
     L = min(L, length(gene_idxs));
-    gene_idxs = gene_idxs(1:L);
+    gene_idxs = cell2mat(gene_idxs(1:L));
     module_genes = {gene_ids(gene_idxs), F(gene_idxs)};
 end
 
@@ -249,15 +249,15 @@ end
 %   Bioinformatics 25, 1091–1093 (2009).
 function [modules, seeds] = module_forming(Net, gene_scores, num_modules)
 
+    bar = waitbar(0, "Calculating modules: ");
     N = length(gene_scores);
     mu = mean(gene_scores);
     degree = sum(Net, 2);
     
     modules = cell(1, num_modules);
     seeds = cell(1, num_modules);
-    
     tic;
-    
+
     for i = 1:num_modules
        
         % Initially, a random gene is selected as the seed module
@@ -302,12 +302,20 @@ function [modules, seeds] = module_forming(Net, gene_scores, num_modules)
             M = unique([M add_to_M]);
         end
         
+        % Calculate the amount of time remaining
+        t = toc;
+        num_remaining = num_modules - i;
+        avg_time_per_module = t / i;
+        time_remaining = avg_time_per_module * num_remaining;
+        
+        waitbar(i / num_modules, bar, sprintf("Time remaining: %.2fs", time_remaining));
+        
         % Add the module to the return array
         modules{i} = M;
         seeds{i} = seed_idx;
-        toc;
     end
 
+    close(bar);
 end
 
 %connectivity_significance calculates the connectivity significance as per

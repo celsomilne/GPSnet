@@ -8,7 +8,7 @@ end
 
 %%%%%%% in our paper, we set cutoff=0.5%
 str=num2str(100*alpha);
-load(['Data_mat/Raw_Module/Raw_Module_',Cancer_Type,'_',str]); %%%%% module
+load(strcat('Data_mat/Raw_Module/Raw_Module_',Cancer_Type,'_',str)); %%%%% module
 
 %%%%% top_modules
 m=find(Score(:,3)<10);Score(m,:)=[];Module(m)=[]; %% delete the too small module

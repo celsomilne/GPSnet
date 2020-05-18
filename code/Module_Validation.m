@@ -4,9 +4,9 @@ function [Enrichment,P_Value]=Module_Validation(Cancer_Type);
 alpha=0.5;
 Cancer_Gene=Cancer_Module_Calculation(Cancer_Type,alpha,0.005);  %%%%% Cancer_Gene
 
-load(['Data_mat/Driver_Gene/',Cancer_Type]);
-load(['Data_mat/Associated_Gene/',Cancer_Type]);
-load(['Data_mat/Survival_Gene/',Cancer_Type]);
+load(strcat('Data_mat/Driver_Gene/',Cancer_Type));
+load(strcat('Data_mat/Associated_Gene/',Cancer_Type));
+load(strcat('Data_mat/Survival_Gene/',Cancer_Type));
 
 load Data_mat/Net_PPI
 Gene=unique(Net(:,1:2));

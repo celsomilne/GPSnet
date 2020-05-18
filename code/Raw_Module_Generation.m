@@ -80,13 +80,14 @@ function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
     F = network_smoothing(s0, G, alpha);
 
     % Generate the raw modules
-    LL=100;
+    LL=40;
     [modules, ~] = module_forming(G, F, LL);
     
     % Run for old behaviour
 %     PM = [gene_ids, F];
 %     [~, ct, ~] = fileparts(Cancer_Type);
 %     Module_Forming_Process(Net, PM, ct, alpha, LL);
+%     module_genes = Cancer_Module_Calculation(Cancer_Type, alpha)
     
     % Calculate the scores for each module, then sort modules in descending
     % order of their scores
@@ -96,20 +97,27 @@ function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
     [~, sorted_idxs] = sort(scores, 'descend');
     modules_sorted = modules(sorted_idxs);
     
-    % Find genes that appear in the top 1% of modules and calculate their
+    % Find genes that appear in the top 5% of modules and calculate their
     % confidence scores
-    top_1pc_idx = ceil(LL * 0.01);
+    top_1pc_idx = ceil(LL * 0.05);
     top_idxs = 1:top_1pc_idx;
     top_modules = modules_sorted(top_idxs);
-    [confidence_scores, gene_idxs] = groupcounts(cell2mat(top_modules));
+    top_genes = cell2mat(top_modules);
+    
+    % Calculate confidence scores (create a histogram with bin centers at
+    % the gene indices and find the ones that appear most frequently)
+    [confidence_scores, bin] = histcounts(top_genes, unique(top_genes));
+    [~, idx] = sort(confidence_scores, 'descend');
+    
+    % Now the genes in descending order of frequency in the top 5% of
+    % disease modules
+    gene_idxs = bin(idx);
     
     % Now sort them and return the top L (300)
-    [~, idxs] = sort(confidence_scores, 'descend');
-    gene_idxs = gene_idxs(idxs);
     L = 300;
     L = min(L, length(gene_idxs));
-    gene_idxs = cell2mat(gene_idxs(1:L));
-    module_genes = {gene_ids(gene_idxs), F(gene_idxs)};
+    gene_idxs = gene_idxs(1:L);
+    module_genes = gene_ids(gene_idxs);
 end
 
 %largest_component calculates the largest component of the PPI network
@@ -249,7 +257,7 @@ end
 %   Bioinformatics 25, 1091–1093 (2009).
 function [modules, seeds] = module_forming(Net, gene_scores, num_modules)
 
-    bar = waitbar(0, "Calculating modules: ");
+    bar = waitbar(0);
     N = length(gene_scores);
     mu = mean(gene_scores);
     degree = sum(Net, 2);
@@ -308,7 +316,9 @@ function [modules, seeds] = module_forming(Net, gene_scores, num_modules)
         avg_time_per_module = t / i;
         time_remaining = avg_time_per_module * num_remaining;
         
-        waitbar(i / num_modules, bar, sprintf("Time remaining: %.2fs", time_remaining));
+        % Update progress bar
+        waitbar(i / num_modules, bar, ...
+                sprintf("Time remaining: %.2fs", time_remaining));
         
         % Add the module to the return array
         modules{i} = M;

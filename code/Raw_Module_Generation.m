@@ -74,15 +74,19 @@ function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
     % where genes that are connected in `Net` are given weights of 1 in
     % both directions.
     [~, G] = ismember(Net, gene_ids);
-    Net = sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)], 1);
+    G = sparse([G(:,1);G(:,2)],[G(:,2);G(:,1)], 1);
     
     % Run network smoothing (see supplementary note 3).
-    F = network_smoothing(s0, Net, alpha);
+    F = network_smoothing(s0, G, alpha);
 
     % Generate the raw modules
     LL=200;
-    modules = module_forming(Net, F, LL);
-    disp("Calculated modules");
+    modules = module_forming(G, F, LL);
+    
+    % Run for old behaviour
+%     PM = [gene_ids, F];
+%     [~, ct, ~] = fileparts(Cancer_Type);
+%     Module_Forming_Process(Net, PM, ct, alpha, LL);
     
     % Calculate the scores for each module, then sort modules in descending
     % order of their scores
@@ -270,7 +274,7 @@ function modules = module_forming(Net, gene_scores, num_modules)
 
             % Calculate the connectivity significance using ClueGo [1] in
             % equation (2).
-            P = connectivity_significance(Net, gamma_idxs, M, k, N);
+            P = connectivity_significance(Net, gamma_idxs, M, k);
             
             % Calculate the expanded module score if a gene i is added to
             % the module (equation (3)).

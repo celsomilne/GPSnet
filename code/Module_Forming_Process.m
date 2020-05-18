@@ -1,15 +1,9 @@
 function Module_Forming_Process(Net,PM,II,Cancer_Type,alpha);
-
+function Module_Forming_Process(Net,PM,Cancer_Type,alpha,LL);
 %%%%%% module merging, zscore=sum(pm-<pm>)/sqrt(k)
 %%%%%% seclect probability pm*fi(1-p)/sum(pm*fi(1-p))
-
 tic;
-
 Str_alpha=num2str(100*alpha);
-
-ctime=datestr(now,30);
-tseed=str2num(ctime((end-5):end));
-rand('seed',tseed*II);
 
 Average_S=mean(PM(:,2));
 Gene_List=unique(Net(:));
@@ -17,10 +11,8 @@ N=length(Gene_List);
 [a,b]=ismember(Net,Gene_List);
 Net=sparse([b(:,1);b(:,2)],[b(:,2),b(:,1)],1);
 Degree=sum(Net,2);
-LL=5000;
 Module{LL,1}=[];
 Score=zeros(LL,3);
-
 Seed_Gene=1:length(Gene_List);
 for i=1:LL
     seed=Seed_Gene(ceil(rand*length(Seed_Gene)));
@@ -42,8 +34,7 @@ for i=1:LL
                 k_extend=Degree(node_extend(k));
                 p_extend(k,1)= sum(hygepdf(ks_extend:k_extend,N,j-1,k_extend));
             end
-            node_p_s=[node_extend p_extend score1];
-            
+            node_p_s=[node_extend p_extend score1];            
             node_p_s(find(node_p_s(:,2)>0.05),:)=[];
             if isempty(node_p_s)
                 break
@@ -59,9 +50,9 @@ for i=1:LL
     end
     Module{i,1}=Gene_List(node);
     Score(i,1:3)=[Gene_List(seed) score length(node)];
-    if mod(i,100)==0
+    if mod(i,1)==0
         toc;
         disp(i)
-        save(['Raw_Module_Score/RandomSeed_Connectivity_Score_Module_',Cancer_Type,'_',Str_alpha,'_',num2str(II),'.mat'],'Module','Score')
+        save(strcat('Data_mat/Raw_Module/Raw_Module_',Cancer_Type,'_',Str_alpha,'.mat'), 'Module','Score')
     end
 end

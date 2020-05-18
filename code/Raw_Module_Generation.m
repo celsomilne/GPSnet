@@ -1,10 +1,14 @@
 %Raw_Module_Generation generates the raw cancer module.
 %
+%   [module_genes_ids, module_gene_scores] =
 %   Raw_Module_Generation(Cancer_Type) calculates and generates the raw
 %   cancer module for a cancer type given by the string Cancer_Type.
 %   Cancer_Type can be of the form 'name' or 'name.mat'. Alpha value used
-%   is 0.5.
+%   is 0.5. The output module_gene_ids is a list of gene ids in the raw
+%   disease module. module_gene_scores is the list of network smoothed
+%   scores for each gene in module_gene_ids.
 %
+%   [module_genes_ids, module_gene_scores] =
 %   Raw_Module_Generation(Cancer_Type, alpha) The alpha parameter is used
 %   to determine the probability of the random walker moving to a random
 %   neighbour during the Random Walk with Restart process (RWR).
@@ -157,7 +161,7 @@ function LG = largest_component(G)
             % Update the connected component to include the new level of
             % proteins and get the unique proteins in the next level of
             % BFS.
-            component = [component; level];
+            component = [component; level]; %#ok
             unique_proteins=unique(level);
         end
         
@@ -292,9 +296,20 @@ function modules = module_forming(Net, gene_scores, num_modules)
 
 end
 
-function P = connectivity_significance(Net, gamma_idxs, M, k, N)
+%connectivity_significance calculates the connectivity significance as per
+%equation (2). 
+%
+%   P = connectivity_significance(Net, gamma_idxs, M, k, N) returns a 1 X n
+%   array of the connectivity significances for the n genes in Gamma
+%   indexed by gamma_idxs. M is the current module, k is the degree of each
+%   gene in Gamma. Net is a sparse N X N adjacnecy matrix of the largest
+%   connected component of the cancer-specific PPI.
+%
+%   See also expanded_module_score
+function P = connectivity_significance(Net, gamma_idxs, M, k)
     num_genes = length(k);
     m = length(M);
+    N = size(Net, 1);
     
     % km is the number of gene i's neighbours that belong to the module
     gamma_module_neighbours = Net(gamma_idxs, M);
@@ -311,7 +326,21 @@ function P = connectivity_significance(Net, gamma_idxs, M, k, N)
     end
 end
   
+%expanded_module_score calculates the expanded module score as per equation
+%(3).
+%
+%   [Zm, Zmp1] = expanded_module_score(M, gamma_idxs, s, mu) calculates the
+%   module score of M (Zm) and the expanded module score (Zmp1) for a
+%   module indexed by M, a Gamma set indexed by gamma_idxs, network
+%   smoothed scores given by n and the mean network smoothed scores given
+%   by mu. The last parameter may be omitted and will be calculated from s.
+%
+%   See also module_score
 function [Zm, Zmp1] = expanded_module_score(M, gamma_idxs, s, mu)
+    
+    if nargin < 4
+        mu = mean(s);
+    end
     
     % For each gene in gamma, calculate the expanded module score
     % Calculate the module score
@@ -324,65 +353,7 @@ function [Zm, Zmp1] = expanded_module_score(M, gamma_idxs, s, mu)
     extended = reshape(extended, 1, []);
     Zmp1 = ((Zm * sqrt(m)) + extended) / sqrt(m+1);
 end
-%%%%%%%% generate the raw module
-function Module_Forming_Process(Net,PM,Cancer_Type,alpha,LL)
-    
-    tic;
-    Str_alpha=num2str(100*alpha);
 
-    gene_ids = PM(:, 1);
-    network_scores = PM(:, 2);
-    
-    Average_S=mean(PM(:,2));
-    Gene_List=unique(Net(:));
-    N=length(Gene_List);
-    Degree=sum(Net,2);
-    Module{LL,1}=[];
-    Score=zeros(LL,3);
-    Seed_Gene=1:length(Gene_List);
-    for i=1:LL
-        seed=Seed_Gene(ceil(rand*length(Seed_Gene)));
-        node=seed;
-        score=sum(PM(node,2)-Average_S)/sqrt(1);
-        for j=2:1000
-            [a,b]=find(Net(:,node)==1);
-            node_extend=setdiff(a,node);
-            p_extend=[];
-            score1=(sum(PM(node,2)-Average_S)+PM(node_extend,2)-Average_S)/sqrt(j);
-            m=find(score1>1.01*score);
-            if isempty(m)
-                break
-            else
-                node_extend=node_extend(m);
-                score1=score1(m);
-                for k=1:length(node_extend)
-                    ks_extend=length(intersect(find(Net(node_extend(k),:)==1),node));
-                    k_extend=Degree(node_extend(k));
-                    p_extend(k,1)= sum(hygepdf(ks_extend:k_extend,N,j-1,k_extend));
-                end
-                node_p_s=[node_extend p_extend score1];            
-                node_p_s(find(node_p_s(:,2)>0.05),:)=[];
-                if isempty(node_p_s)
-                    break
-                else    
-                    node_p_s=sortrows(node_p_s,-3);
-                    x=PM(node_p_s(:,1),2)/sum(PM(node_p_s(:,1),2));
-                    x=[0;cumsum(x)];
-                    xx=find(x<rand,1,'last');
-                    node=[node;node_p_s(xx,1)];
-                    score=node_p_s(xx,3);
-                end
-            end
-        end
-        Module{i,1}=Gene_List(node);
-        Score(i,1:3)=[Gene_List(seed) score length(node)];
-        if mod(i,1)==0
-            toc;
-            disp(i)
-            save(['Data_mat/Raw_Module/Raw_Module_',Cancer_Type,'_',Str_alpha,'.mat'],'Module','Score')
-        end
-    end
-end
 
 %module_score calculates the score Z_M for a module given by M. 
 %

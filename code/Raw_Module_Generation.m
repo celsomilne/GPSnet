@@ -8,7 +8,7 @@
 %   Raw_Module_Generation(Cancer_Type, alpha) The alpha parameter is used
 %   to determine the probability of the random walker moving to a random
 %   neighbour during the Random Walk with Restart process (RWR).
-function Raw_Module_Generation(Cancer_Type,alpha)
+function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
 
     if nargin < 2
         alpha=0.5;
@@ -74,16 +74,34 @@ function Raw_Module_Generation(Cancer_Type,alpha)
     
     % Run network smoothing (see supplementary note 3).
     F = network_smoothing(s0, Net, alpha);
-    s = [gene_ids, F];
 
     % Generate the raw modules
-    LL=10;
-    modules = module_forming(Net, s, LL);
+    LL=200;
+    modules = module_forming(Net, F, LL);
+    disp("Calculated modules");
     
     % Calculate the scores for each module, then sort modules in descending
     % order of their scores
-    scores = 
+    mu = mean(F);
+    score_fun = @ (M) module_score(F(M), mu);
+    scores = cellfun(score_fun, modules);
+    [~, sorted_idxs] = sort(scores, 'descend');
+    modules_sorted = modules(sorted_idxs);
     
+    % Find genes that appear in the top 1% of modules and calculate their
+    % confidence scores
+    top_1pc_idx = ceil(LL * 0.01);
+    top_idxs = 1:top_1pc_idx;
+    top_modules = modules_sorted(top_idxs);
+    [confidence_scores, gene_idxs] = groupcounts(cell2mat(top_modules));
+    
+    % Now sort them and return the top L (300)
+    [~, idxs] = sort(confidence_scores, 'descend');
+    gene_idxs = gene_idxs(idxs);
+    L = 300;
+    L = min(L, length(gene_idxs));
+    gene_idxs = gene_idxs(1:L);
+    module_genes = {gene_ids(gene_idxs), F(gene_idxs)};
 end
 
 %largest_component calculates the largest component of the PPI network
@@ -221,15 +239,13 @@ end
 %   [1] Bindea, G. et al. ClueGO: a Cytoscape plug-in to decipher
 %   functionally grouped gene ontology and pathway annotation networks.
 %   Bioinformatics 25, 1091–1093 (2009).
-function modules = module_forming(Net, s, num_modules)
+function modules = module_forming(Net, gene_scores, num_modules)
 
-    gene_ids = s(:, 1);
-    gene_scores = s(:, 2);
-    N = length(gene_ids);
+    N = length(gene_scores);
     modules = cell(1, num_modules);
     degree = sum(Net, 2);
     
-    parfor i = 1:num_modules
+    for i = 1:num_modules
        
         % Initially, a random gene is selected as the seed module
         seed_idx = ceil(rand * N);
@@ -239,20 +255,19 @@ function modules = module_forming(Net, s, num_modules)
         while true
             
             % Get the genes that interact with the module (get all rows of
-            % Net which are in the module M, then find all the columns where
-            % a node exists).
+            % Net which are in the module Gamma, then find all the columns
+            % where a node exists).
             module_genes = Net(M, :);
             [~, gamma_idxs] = find(module_genes > 0);
-            gamma_idxs = reshape(gamma_idxs, 1, []);
+            gamma_idxs = unique(reshape(gamma_idxs, 1, []));
 
             % Parameters for calculating the connectivity significance
             k = degree(gamma_idxs);
-            m = length(gamma_idxs);
 
             % Calculate the connectivity significance using ClueGo [1] in
             % equation (2).
-            P = connectivity_significance(m, k, N);
-
+            P = connectivity_significance(Net, gamma_idxs, M, k, N);
+            
             % Calculate the expanded module score if a gene i is added to
             % the module (equation (3)).
             mu = mean(gene_scores);
@@ -277,19 +292,22 @@ function modules = module_forming(Net, s, num_modules)
 
 end
 
-function P = connectivity_significance(m, k, N)
+function P = connectivity_significance(Net, gamma_idxs, M, k, N)
     num_genes = length(k);
+    m = length(M);
+    
+    % km is the number of gene i's neighbours that belong to the module
+    gamma_module_neighbours = Net(gamma_idxs, M);
+    km = sum(gamma_module_neighbours, 2);
     
     % Calculate P(i) for each gene
     P = zeros([1, num_genes]);
     for i = 1:num_genes
         
         % Parameters for matlab hydepdf (for more, type help hygepdf)
-        X_ = k(i:m);
-        M_ = N;
-        K_ = m;
-        N_ = k(i);
-        P(i) = sum(hygepdf(X_, M_, K_, N_));
+        ki = k(i);
+        kmi = km(i);
+        P(i) = sum(hygepdf(kmi:ki, N, m, ki));
     end
 end
   

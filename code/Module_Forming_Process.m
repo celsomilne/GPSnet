@@ -1,4 +1,3 @@
-function Module_Forming_Process(Net,PM,II,Cancer_Type,alpha);
 function Module_Forming_Process(Net,PM,Cancer_Type,alpha,LL);
 %%%%%% module merging, zscore=sum(pm-<pm>)/sqrt(k)
 %%%%%% seclect probability pm*fi(1-p)/sum(pm*fi(1-p))

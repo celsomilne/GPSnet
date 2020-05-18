@@ -81,12 +81,14 @@ function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
 
     % Generate the raw modules
     LL=200;
+    tic;
     modules = module_forming(G, F, LL);
+    toc;
     
     % Run for old behaviour
-%     PM = [gene_ids, F];
-%     [~, ct, ~] = fileparts(Cancer_Type);
-%     Module_Forming_Process(Net, PM, ct, alpha, LL);
+    PM = [gene_ids, F];
+    [~, ct, ~] = fileparts(Cancer_Type);
+    Module_Forming_Process(Net, PM, ct, alpha, LL);
     
     % Calculate the scores for each module, then sort modules in descending
     % order of their scores
@@ -252,6 +254,7 @@ function modules = module_forming(Net, gene_scores, num_modules)
     N = length(gene_scores);
     modules = cell(1, num_modules);
     degree = sum(Net, 2);
+    tic;
     
     for i = 1:num_modules
        
@@ -260,7 +263,7 @@ function modules = module_forming(Net, gene_scores, num_modules)
         
         % Start the module
         M = seed_idx;
-        while true
+        for j = 1:2000
             
             % Get the genes that interact with the module (get all rows of
             % Net which are in the module Gamma, then find all the columns
@@ -268,6 +271,15 @@ function modules = module_forming(Net, gene_scores, num_modules)
             module_genes = Net(M, :);
             [~, gamma_idxs] = find(module_genes > 0);
             gamma_idxs = unique(reshape(gamma_idxs, 1, []));
+            
+            % Calculate the expanded module score if a gene i is added to
+            % the module (equation (3)).
+            mu = mean(gene_scores);
+            [Zm, Zmp1] = expanded_module_score(M, gamma_idxs, gene_scores, mu);
+            
+            % Drop indices where Zm > Zmp1
+            mask = Zmp1 > Zm & ~ismember(gamma_idxs, M);
+            gamma_idxs = gamma_idxs(mask);
 
             % Parameters for calculating the connectivity significance
             k = degree(gamma_idxs);
@@ -276,13 +288,8 @@ function modules = module_forming(Net, gene_scores, num_modules)
             % equation (2).
             P = connectivity_significance(Net, gamma_idxs, M, k);
             
-            % Calculate the expanded module score if a gene i is added to
-            % the module (equation (3)).
-            mu = mean(gene_scores);
-            [Zm, Zmp1] = expanded_module_score(M, gamma_idxs, gene_scores, mu);
-            
             % Select genes to add to M that are not already in M
-            mask = P < 0.05 & Zmp1 > Zm & ~(ismember(gamma_idxs, M));
+            mask = P < 0.05;
             
             % If we have no more genes to add, then break this loop
             if sum(mask) == 0
@@ -296,6 +303,7 @@ function modules = module_forming(Net, gene_scores, num_modules)
         
         % Add the module to the return array
         modules{i} = M;
+        toc;
     end
 
 end
@@ -311,7 +319,8 @@ end
 %
 %   See also expanded_module_score
 function P = connectivity_significance(Net, gamma_idxs, M, k)
-    num_genes = length(k);
+    
+    num_genes = length(gamma_idxs);
     m = length(M);
     N = size(Net, 1);
     

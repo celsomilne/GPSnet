@@ -80,15 +80,13 @@ function module_genes = Raw_Module_Generation(Cancer_Type,alpha)
     F = network_smoothing(s0, G, alpha);
 
     % Generate the raw modules
-    LL=200;
-    tic;
-    modules = module_forming(G, F, LL);
-    toc;
+    LL=60000;
+    [modules, ~] = module_forming(G, F, LL);
     
     % Run for old behaviour
-    PM = [gene_ids, F];
-    [~, ct, ~] = fileparts(Cancer_Type);
-    Module_Forming_Process(Net, PM, ct, alpha, LL);
+%     PM = [gene_ids, F];
+%     [~, ct, ~] = fileparts(Cancer_Type);
+%     Module_Forming_Process(Net, PM, ct, alpha, LL);
     
     % Calculate the scores for each module, then sort modules in descending
     % order of their scores
@@ -249,11 +247,15 @@ end
 %   [1] Bindea, G. et al. ClueGO: a Cytoscape plug-in to decipher
 %   functionally grouped gene ontology and pathway annotation networks.
 %   Bioinformatics 25, 1091–1093 (2009).
-function modules = module_forming(Net, gene_scores, num_modules)
+function [modules, seeds] = module_forming(Net, gene_scores, num_modules)
 
     N = length(gene_scores);
-    modules = cell(1, num_modules);
+    mu = mean(gene_scores);
     degree = sum(Net, 2);
+    
+    modules = cell(1, num_modules);
+    seeds = cell(1, num_modules);
+    
     tic;
     
     for i = 1:num_modules
@@ -274,7 +276,6 @@ function modules = module_forming(Net, gene_scores, num_modules)
             
             % Calculate the expanded module score if a gene i is added to
             % the module (equation (3)).
-            mu = mean(gene_scores);
             [Zm, Zmp1] = expanded_module_score(M, gamma_idxs, gene_scores, mu);
             
             % Drop indices where Zm > Zmp1
@@ -303,6 +304,7 @@ function modules = module_forming(Net, gene_scores, num_modules)
         
         % Add the module to the return array
         modules{i} = M;
+        seeds{i} = seed_idx;
         toc;
     end
 
